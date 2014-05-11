@@ -18,6 +18,9 @@ function compile(code) {
 function start_robot(metadata, code) {
     var username = metadata.username;
 
+    // Create the main generator function for this robot.
+    var main = compile(code);
+
     var connect_url = url.parse(server);
     connect_url.query = {
         username: username,
@@ -25,15 +28,42 @@ function start_robot(metadata, code) {
     };
     var socket = io.connect(url.format(connect_url));
 
+    var games = {};
+
+    function compute_move(game_id, opponent_previous_move) {
+        var result = games[game_id].next(opponent_previous_move);
+        if (result.done)
+            throw new Error(username + " returned instead of yielding a move in game " + game_id);
+        var move = result.value;
+        if (move !== 'COOPERATE' && move !== 'DEFECT')
+            throw new Error(username + " yielded an invalid move in game " + game_id);
+        socket.emit('game:move', {game_id: game_id, move: move});
+    }
+
     socket.on('connect', function () {
         console.log(username, "connect");
-        socket.on('disconnect', function () {
-            console.log(username, "disconnect");
-        });
-        socket.on('event', function (data) {
-            console.log(username, "event: " + JSON.stringify(data));
-        });
+        socket.emit('add:user', username);
     });
+
+    socket.on('game:init', function (msg) {
+        var game_id = msg.game_id;
+
+        // Send the server our code.
+        socket.emit('game:ready', {game_id: game_id, code: code});
+
+        // Call the generator function to create a generator object.
+        games[game_id] = main();
+        compute_move(game_id, undefined);
+    });
+
+    socket.on('game:next', function (msg) {
+        compute_move(msg.game_id, msg.previous);
+    });
+
+    socket.on('game:over', function (msg) {
+        delete games[msg.game_id];
+    });
+
 }
 
 // Read the contents of the given filename. Parse headers. Then call start_robot
