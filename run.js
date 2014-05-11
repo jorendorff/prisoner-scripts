@@ -13,73 +13,101 @@ function compile(code) {
         "\n; return main;")();
 }
 
-// Connect to the server and play forever using the given robot player metadata
-// and code.
-function start_robot(metadata, code) {
-    var username = metadata.username;
+var robots = {};
+
+// Connect to the server and play forever using the given robot object.
+function start_robot(robot) {
+    var username = robot.metadata.username;
+    console.log("starting robot", username);
 
     // Create the main generator function for this robot.
-    var main = compile(code);
+    var main = compile(robot.code);
 
     var connect_url = url.parse(server);
     connect_url.query = {
         username: username,
-        name: metadata.name
+        name: robot.metadata.name
     };
-    var socket = io.connect(url.format(connect_url));
 
-    var games = {};
+    return new Promise(function (resolve, reject) {
+        // I can't find any API in socket.io-client for being called back on
+        // errors, so `reject` isn't used.
+        console.log("connecting to:", url.format(connect_url));
+        var socket = io.connect(url.format(connect_url), {"force new connection": true});
 
-    function compute_move(game_id, opponent_previous_move) {
-        var result = games[game_id].next(opponent_previous_move);
-        if (result.done)
-            throw new Error(username + " returned instead of yielding a move in game " + game_id);
-        var move = result.value;
-        if (move !== 'COOPERATE' && move !== 'DEFECT')
-            throw new Error(username + " yielded an invalid move in game " + game_id);
-        socket.emit('game:move', {game_id: game_id, move: move});
-    }
+        var games = {};
 
-    socket.on('connect', function () {
-        console.log(username, "connect");
-        socket.emit('add:user', username);
-    });
-
-    socket.on('game:init', function (msg) {
-        var game_id = msg.game_id;
-
-        // Send the server our code.
-        socket.emit('game:ready', {game_id: game_id, code: code});
-
-        // Call the generator function to create a generator object.
-        games[game_id] = main();
-        compute_move(game_id, undefined);
-    });
-
-    socket.on('game:next', function (msg) {
-        compute_move(msg.game_id, msg.previous);
-    });
-
-    socket.on('game:over', function (msg) {
-        delete games[msg.game_id];
-    });
-
-}
-
-// Read the contents of the given filename. Parse headers. Then call start_robot
-// to connect to the server and play.
-function start_file(filename) {
-    console.info("starting:", filename);
-
-    var username = "robot-" + filename.match(/\/([^\/]*)\.js$/)[1];
-
-    fs.readFile(filename, {encoding: "utf-8"}, function (err, text) {
-        if (err) {
-            console.error("error reading file: " + filename);
-            console.error(err);
-            return;
+        function compute_move(game_id, opponent_previous_move) {
+            var result = games[game_id].next(opponent_previous_move);
+            if (result.done)
+                throw new Error(username + " returned instead of yielding a move in game " + game_id);
+            var move = result.value;
+            if (move !== 'COOPERATE' && move !== 'DEFECT')
+                throw new Error(username + " yielded an invalid move in game " + game_id);
+            socket.emit('game:move', {game_id: game_id, move: move});
         }
 
+        socket.on('connect', function () {
+            console.log(username, "connect");
+            socket.emit('add:user', username);
+            robot.socket = socket;
+            robots[robot.name] = robot;
+            resolve(robot);
+        });
+
+        socket.on('login', function (data) {
+            console.log("login:", data);
+        });
+
+        socket.on('game:init', function (msg) {
+            var game_id = msg.game_id;
+
+            // Send the server our code.
+            socket.emit('game:ready', {game_id: game_id, code: code});
+
+            // Call the generator function to create a generator object.
+            games[game_id] = main();
+            compute_move(game_id, undefined);
+        });
+
+        socket.on('game:next', function (msg) {
+            compute_move(msg.game_id, msg.previous);
+        });
+
+        socket.on('game:over', function (msg) {
+            delete games[msg.game_id];
+        });
+    });
+}
+
+// This function takes any function that accepts a Node error-first callback as
+// its last argument, and wraps it in a function that returns a Promise instead.
+function lift(fn) {
+    return function () {
+        var args = arguments;
+        return new Promise(function (resolve, reject) {
+            args[args.length++] = function (err, val) {
+                if (err)
+                    reject(err);
+                else
+                    resolve(val);
+            };
+            fn.apply(this, args);
+        });
+    };
+}
+
+var readFile = lift(fs.readFile);
+
+// Read the contents of the given filename. Parse headers. Return a promise for
+// a new Robot object.
+function load_robot_file(filename) {
+    console.info("starting:", filename);
+
+    var name = filename.match(/\/([^\/]*)\.js$/)[1];
+    var username = "robot-" + name;
+
+    return readFile(filename, {encoding: "utf-8"}).then(function (text) {
         // Parse lines at the beginning of the file that match
         // the pattern "// Key: value\n".
         var metadata = {username: username};
@@ -90,24 +118,33 @@ function start_file(filename) {
             metadata[match[1]] = match[2];
             text = text.substring(match[0].length);
         }
-
-        start_robot(metadata, text);
+        return {name: name, metadata: metadata, code: text};
     });
 }
 
+var readdir = lift(fs.readdir);
+
+// Read all the character files, connect each character to the server. Return a
+// promise that resolves when all characters are connected.
 function start_main() {
     var dir = __dirname + "/characters";
-    fs.readdir(dir, function (err, files) {
-        if (err)
-            return console.error(err);
-        files.forEach(function (name) {
-            if (name.match(/\.js$/))
-                start_file(dir + "/" + name);
-        });
+    return readdir(dir).then(function (files) {
+        files = files.filter(function (name) { return name.match(/\.js$/); });
+        return Promise.all(files.map(function (name) {
+            return load_robot_file(dir + "/" + name).then(start_robot);
+        }));
     });
 }
 
-start_main();
+start_main().then(function () {
+    console.info("all started!");
+    if (robots.greg.socket === robots.steve.socket)
+        console.log("disaster");
+    else
+        console.log("success");
+}).catch(function (exc) {
+    console.error(exc);
+});
 
 // Stay alive...
-setInterval(function () { console.log("boop"); }, 1000);
+setInterval(function () { console.log("boop"); }, 60 * 1000);
