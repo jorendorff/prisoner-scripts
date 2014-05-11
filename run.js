@@ -79,19 +79,5 @@ function start_main() {
 
 start_main();
 
-
-// start_user({
-//     query: {
-//         username: "robot-steve",
-//         name: "Scumbag Steve"
-//     },
-//     play: function* () {
-//         while (true) {
-//             yield DEFECT;
-//         }
-//     }
-// });
-
-
 // Stay alive...
 setInterval(function () { console.log("boop"); }, 1000);
