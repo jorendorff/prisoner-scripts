@@ -4,7 +4,6 @@
 // Each character has a fixed script and will play the game whenever the server
 // asks it to.
 
-
 'use strict';
 
 var url = require('url');
@@ -60,11 +59,11 @@ function Robot(name, metadata, code) {
 }
 
 // Connect to the server and play forever using the given robot object.
-function start_robot(robot) {
+function startRobot(robot) {
     var username = "robot-" + robot.name;
 
-    var connect_url = url.parse(server);
-    connect_url.query = {
+    var connectURL = url.parse(server);
+    connectURL.query = {
         username: username,
         name: robot.metadata.name
     };
@@ -72,16 +71,26 @@ function start_robot(robot) {
     return new Promise(function (resolve, reject) {
         // I can't find any API in socket.io-client for being called back on
         // errors, so `reject` isn't used.
-        console.log(username, "connecting to", url.format(connect_url));
-        var socket = io.connect(url.format(connect_url), {"force new connection": true});
+        console.log(username, "connecting to", url.format(connectURL));
+        var socket = io.connect(url.format(connectURL), {"force new connection": true});
 
         var games = {};
 
-        function compute_move(game_id, opponent_previous_move) {
-            var result = games[game_id].next(opponent_previous_move);
+        function computeMove(game_id, opponentPreviousMove) {
+            var result = games[game_id].next(opponentPreviousMove);
             if (result.done)
                 throw new Error(username + " returned instead of yielding a move in game " + game_id);
             var move = result.value;
+
+            // If move is a promise, wait for it to resolve. This gross feature
+            // is used (appropriately enough) by Foul Bachelor Frog.
+            if (typeof move.then === "function") {
+                move.then(function (result) {
+                    computeMove(game_id, result);
+                });
+                return;
+            }
+
             if (move !== 'COOPERATE' && move !== 'DEFECT')
                 console.warn(username + " yielded an invalid move in game " + game_id);
             console.info(">", username, "game:move", game_id, move);
@@ -113,12 +122,12 @@ function start_robot(robot) {
 
             // Call the generator function to create a generator object.
             games[game_id] = robot.main();
-            compute_move(game_id, undefined);
+            computeMove(game_id, undefined);
         });
 
         socket.on('game:next', function (msg) {
             console.info("<", username, "game:next", msg.game_id, msg.previous);
-            compute_move(msg.game_id, msg.previous);
+            computeMove(msg.game_id, msg.previous);
         });
 
         socket.on('game:over', function (msg) {
@@ -163,14 +172,14 @@ Robot.load = function (filename) {
 
 // Read all the character files, connect each character to the server. Return a
 // promise that resolves when all characters are connected.
-function start_all() {
+function startAll() {
     var dir = __dirname + "/characters";
     return readdir(dir).then(function (files) {
         files = files.filter(function (name) { return name.match(/\.js$/); });
 
         // Load and start each robot. This produces an array of promises for Robot objects.
         var robots = files.map(function (name) {
-            return Robot.load(dir + "/" + name).then(start_robot);
+            return Robot.load(dir + "/" + name).then(startRobot);
         });
 
         // Return a promise that becomes resolved when all the Robots are done starting.
@@ -178,10 +187,10 @@ function start_all() {
     });
 }
 
-start_all().then(function () {
+startAll().then(function () {
     console.info("all started! starting a match:");
-    console.info(">", "robot-steve", "play:now", [/*robots.greg.id,*/ robots.wolfy.id]);
-    robots.steve.socket.emit("play:now", [/*robots.greg.id,*/ robots.wolfy.id]);
+    console.info(">", "robot-steve", "play:now", [/*robots.greg.id,*/ robots.froggy.id]);
+    robots.steve.socket.emit("play:now", [/*robots.greg.id,*/ robots.froggy.id]);
 }).catch(function (exc) {
     console.error(exc);
 });
