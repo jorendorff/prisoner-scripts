@@ -78,34 +78,37 @@ function start_robot(robot) {
         var games = {};
 
         function compute_move(game_id, opponent_previous_move) {
-            console.log(username, game_id, opponent_previous_move);
             var result = games[game_id].next(opponent_previous_move);
             if (result.done)
                 throw new Error(username + " returned instead of yielding a move in game " + game_id);
             var move = result.value;
             if (move !== 'COOPERATE' && move !== 'DEFECT')
                 throw new Error(username + " yielded an invalid move in game " + game_id);
+            console.info(">", username, "game:move", game_id, move);
             socket.emit('game:move', {game_id: game_id, move: move});
         }
 
         socket.on('connect', function () {
-            console.log(username, "connect");
+            console.info("*", username, "connect");
             robot.socket = socket;
+            console.info(">", username, "add:user");
             socket.emit('add:user', username);
             // The response to this will be a 'login' message.
         });
 
         socket.on('login', function (data) {
+            console.info("<", username, "login", data.user._id);
             robot.id = data.user._id;
-            console.log(username, "login as", robot.id);
             robots[robot.name] = robot;
             resolve(robot);
         });
 
         socket.on('game:init', function (msg) {
             var game_id = msg.game_id;
+            console.info("<", username, "game:init", game_id);
 
             // Send the server our code.
+            console.info(">", username, "game:ready", game_id);
             socket.emit('game:ready', {game_id: game_id, code: robot.code});
 
             // Call the generator function to create a generator object.
@@ -114,22 +117,24 @@ function start_robot(robot) {
         });
 
         socket.on('game:next', function (msg) {
+            console.info("<", username, "game:next", msg.game_id, msg.previous);
             compute_move(msg.game_id, msg.previous);
         });
 
         socket.on('game:over', function (msg) {
+            console.info("<", username, "game:over", msg.game_id);
             delete games[msg.game_id];
         });
 
         socket.on('observe:progress', function (msg) {
-            console.log(username, msg.game_id,
-                        "P1:" + msg.player1_move, "P2:" + msg.player2_move,
-                        "(" + msg.player1_score + "-" + msg.player2_score + ")");
+            console.info("<", username, "observe:progress", msg.game_id,
+                         "P1:" + msg.player1_move, "P2:" + msg.player2_move,
+                         "(" + msg.player1_score + "-" + msg.player2_score + ")");
         });
 
         socket.on('observe:over', function (msg) {
-            console.log(username, msg.game_id, "game over " +
-                        "(" + msg.player1_score + "-" + msg.player2_score + ")");
+            console.info("<", username, "observe:over", msg.game_id,
+                         "(" + msg.player1_score + "-" + msg.player2_score + ")");
         });
     });
 };
@@ -175,7 +180,8 @@ function start_all() {
 
 start_all().then(function () {
     console.info("all started! starting a match:");
-    robots.steve.socket.emit("play:now", [robots.greg.id, robots.wolfy.id]);
+    console.info(">", "robot-steve", "play:now", [/*robots.greg.id,*/ robots.wolfy.id]);
+    robots.steve.socket.emit("play:now", [/*robots.greg.id,*/ robots.wolfy.id]);
 }).catch(function (exc) {
     console.error(exc);
 });
