@@ -168,6 +168,3 @@ start_all().then(function () {
 }).catch(function (exc) {
     console.error(exc);
 });
-
-// This weird line of code keeps Node from exiting.
-setInterval(function () {}, 1000000);
