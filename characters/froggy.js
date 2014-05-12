@@ -9,7 +9,7 @@ function sleep(seconds) {
 
 function* main() {
     for (var i = 0; ; i++) {
-        yield sleep(i);
+        yield sleep(Math.pow(2, i) + 0.25);
         yield DEFECT;
     }
 }
