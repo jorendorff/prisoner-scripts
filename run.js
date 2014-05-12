@@ -43,7 +43,7 @@ var server = "http://localhost:3000/";
 
 // All robots that have successfully connected and logged in, by name.  For
 // example, `robots.greg` will be the robot defined in `characters/greg.js`.
-var robots = {};
+var robots = Object.create(null);
 
 function Robot(name, metadata, code) {
     this.name = name;
@@ -74,10 +74,10 @@ function startRobot(robot) {
         console.log(username, "connecting to", url.format(connectURL));
         var socket = io.connect(url.format(connectURL), {"force new connection": true});
 
-        var games = {};
+        var generators = {};
 
         function computeMove(game_id, opponentPreviousMove) {
-            var result = games[game_id].next(opponentPreviousMove);
+            var result = generators[game_id].next(opponentPreviousMove);
             if (result.done)
                 throw new Error(username + " returned instead of yielding a move in game " + game_id);
             var move = result.value;
@@ -105,6 +105,10 @@ function startRobot(robot) {
             // The response to this will be a 'login' message.
         });
 
+        socket.on('disconnect', function () {
+            console.info("*", username, "disconnect");
+        });
+
         socket.on('login', function (data) {
             console.info("<", username, "login", data.user._id);
             robot.id = data.user._id;
@@ -121,7 +125,7 @@ function startRobot(robot) {
             socket.emit('game:ready', {game_id: game_id, code: robot.code});
 
             // Call the generator function to create a generator object.
-            games[game_id] = robot.main();
+            generators[game_id] = robot.main();
             computeMove(game_id, undefined);
         });
 
@@ -132,7 +136,14 @@ function startRobot(robot) {
 
         socket.on('game:over', function (msg) {
             console.info("<", username, "game:over", msg.game_id);
-            delete games[msg.game_id];
+            delete generators[msg.game_id];
+        });
+
+        socket.on('observe:init', function (msg) {
+            var pendingID = msg.clientTag + "/" + msg.players[1];
+            console.info("<", username, "observe:init", msg.game_id, pendingID);
+            pendingGames[pendingID].onGameStart(msg);
+            delete pendingGames[pendingID];
         });
 
         socket.on('observe:progress', function (msg) {
@@ -144,6 +155,7 @@ function startRobot(robot) {
         socket.on('observe:over', function (msg) {
             console.info("<", username, "observe:over", msg.game_id,
                          "(" + msg.player1_score + "-" + msg.player2_score + ")");
+            games[msg.game_id].onGameFinish(msg);
         });
     });
 };
@@ -187,10 +199,72 @@ function startAll() {
     });
 }
 
+var seq = 0;
+var pendingGames = Object.create(null);
+var games = Object.create(null);
+
+function Game(p1, p2, resolve, reject) {
+    this.id = undefined;
+    this.players = [p1, p2];
+    this._resolve = resolve;
+    this._reject = reject;
+}
+
+Game.prototype.onGameStart = function (msg) {
+    this.id = msg.game_id;
+    games[this.id] = this;
+};
+
+Game.prototype.onGameFinish = function (msg) {
+    this.scores = [msg.player1_score, msg.player2_score];
+    this._resolve(this);
+    delete games[this.id];
+};
+
+function playGame(name1, names) {
+    var p1 = robots[name1];
+    var ids = names.map(function (name) { return robots[name].id; });
+    var requestID = "" + seq++;
+    console.info(">", "robot-" + p1.name, "play:now", ids);
+    p1.socket.emit("play:now", ids, requestID);
+    return names.map(function (name) {
+        var p2 = robots[name];
+        return new Promise(function (resolve, reject) {
+            pendingGames[requestID + "/" + p2.id] = new Game(p1, p2, resolve, reject);
+        });
+    });
+}
+
+function playOneGame(name1, name2) {
+    return playGame(name1, [name2])[0];
+}
+
+function test(name1, score1, name2, score2) {
+    var expected = name1 + " " + score1 + ", " + name2 + " " + score2;
+    return playOneGame(name1, name2).then(function (game) {
+        var scores = game.scores;
+        var actual = name1 + " " + scores[0] + ", " + name2 + " " + scores[1];
+        console.log((actual === expected ? "PASS" : "FAIL") + " - " + actual);
+        return actual === expected;
+    })
+}
+
+function shutdown() {
+    for (var name in robots) {
+        robots[name].socket.close();
+    }
+}
+
 startAll().then(function () {
     console.info("all started! starting a match:");
-    console.info(">", "robot-steve", "play:now", [/*robots.greg.id,*/ robots.froggy.id]);
-    robots.steve.socket.emit("play:now", [/*robots.greg.id,*/ robots.froggy.id]);
+    var tests = [
+        test("steve", 500, "greg", 0),
+        test("steve", 476, "froggy", 6),
+        test("greg", 300, "walter", 300),
+        test("steve", 104, "walter", 99)
+    ];
+    return Promise.all(tests);
+    //robots.steve.socket.emit("play:now", [/*robots.greg.id,*/ robots.froggy.id]);
 }).catch(function (exc) {
     console.error(exc);
-});
+}).then(shutdown);
