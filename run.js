@@ -83,7 +83,7 @@ function start_robot(robot) {
                 throw new Error(username + " returned instead of yielding a move in game " + game_id);
             var move = result.value;
             if (move !== 'COOPERATE' && move !== 'DEFECT')
-                throw new Error(username + " yielded an invalid move in game " + game_id);
+                console.warn(username + " yielded an invalid move in game " + game_id);
             console.info(">", username, "game:move", game_id, move);
             socket.emit('game:move', {game_id: game_id, move: move});
         }
