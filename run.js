@@ -120,6 +120,12 @@ function start_robot(robot) {
         socket.on('game:over', function (msg) {
             delete games[msg.game_id];
         });
+
+        socket.on('observe:progress', function (msg) {
+            console.log(username, msg.game_id,
+                        "P1:" + msg.player1_move, "P2:" + msg.player2_move,
+                        "(" + msg.player1_score + "-" + msg.player2_score + ")");
+        });
     });
 };
 
@@ -164,7 +170,7 @@ function start_all() {
 
 start_all().then(function () {
     console.info("all started! starting a match:");
-    robots.steve.socket.emit("play:now", [robots.greg.id]);
+    robots.steve.socket.emit("play:now", [robots.greg.id, robots.wolfy.id]);
 }).catch(function (exc) {
     console.error(exc);
 });
