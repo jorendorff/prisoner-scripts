@@ -126,6 +126,11 @@ function start_robot(robot) {
                         "P1:" + msg.player1_move, "P2:" + msg.player2_move,
                         "(" + msg.player1_score + "-" + msg.player2_score + ")");
         });
+
+        socket.on('observe:over', function (msg) {
+            console.log(username, msg.game_id, "game over " +
+                        "(" + msg.player1_score + "-" + msg.player2_score + ")");
+        });
     });
 };
 
