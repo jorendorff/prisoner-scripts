@@ -152,41 +152,72 @@ var payouts = {
 };
 
 
-// ## Tests
+// ## Test support
 
-// Hack promise support into Mocha.
+// Hack Mocha to support async programming using generators and promises.
+//
+// "You are not expected to understand this."
+// http://cm.bell-labs.com/cm/cs/who/dmr/odd.html
+//
+var Generator = function *g() {}.constructor;
 function wrapForGenerators(f) {
-    return function () {
-        function *g() {}
-        var test = arguments[arguments.length - 1];
-        if (test.constructor === g.constructor) {
-            arguments[arguments.length - 1] = function (done) {
-                var gen = test();
-                function pump(value) {
-                    var result;
-                    try {
-                        result = gen.next(value);
-                    } catch (exc) {
-                        return done(exc, undefined);
-                    }
-
-                    if (result.done) {
-                        return done(undefined, result.value);
-                    } else {
-                        result.value.then(pump).catch(function (exc) {
-                            done(exc, undefined);
-                        });
-                    }
+    // Given a generator `test`, return a plain-old-Node-style asynchronous
+    // function that takes a callback argument.
+    function toNodeStyle(test) {
+        return function (done) {
+            var gen = test();
+            function pump(method, value) {
+                var result;
+                try {
+                    // Resume the generator wherever we left off.
+                    // It may yield, throw, or return.
+                    result = gen[method](value);
+                } catch (exc) {
+                    // It threw.
+                    return done(exc, undefined);
                 }
-                pump(undefined);
+
+                if (result.done) {
+                    // It returned.
+                    return done(undefined, result.value);
+                } else {
+                    // It yielded a promise. We'll wait for that promise to
+                    // resolve before proceeding.
+                    result.value.then(function (value) {
+                        // The promise is resolved. Pass the resulting value to gen.next.
+                        pump('next', value);
+                    }, function (exc) {
+                        // The promise was rejected! Pass the exception to the
+                        // generator too; it may catch it.
+                        pump('throw', value);
+                    });
+                }
             }
+
+            // Start the generator by calling gen.next(undefined).
+            pump('next', undefined);
+        };
+    }
+
+    // Return a wrapped-for-generators function to use as a replacement for f.
+    // Remember, f is one of the Mocha testing functions, like `it`.
+    return function () {
+        // This function will behave exactly like f (note the f.apply call at
+        // the end) except if the last argument is a generator.
+        var test = arguments[arguments.length - 1];
+        if (test instanceof Generator) {
+            // f doesn't understand generators. Convert `test` to something f
+            // will understand: a plain old Node-style asynchronous function.
+            arguments[arguments.length - 1] = toNodeStyle(test);
         }
         return f.apply(this, arguments);
     };
 }
-
 it = wrapForGenerators(it);
 before = wrapForGenerators(before);
+
+
+// ## Actual tests (!)
 
 describe('robots', function () {
     var r = robots.byName;
