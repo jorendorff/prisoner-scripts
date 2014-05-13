@@ -255,6 +255,20 @@ describe('robots', function () {
         });
     });
 
+    it("should be able to run many games with the same participants all at once", function* () {
+        var N = 12;
+        var games = [];
+        for (var i = 0; i < N; i++) {
+            games[i] = playOneGame(r.cotton, r.skier);
+        }
+        var games = yield Promise.all(games);
+        assert.strictEqual(games.length, N);
+        var expected = playLocally(r.cotton, r.skier);
+        games.forEach(function (game) {
+            assert.deepEqual(game.scores, expected);
+        });
+    });
+
     var PENGUIN_LIFE = 37
 
     it("should handle the penguin case (doofy behavior by a player -> forfeit)", function* () {
@@ -272,7 +286,6 @@ describe('robots', function () {
     it("should be able to run a tournament", function* () {
         var players = [r.steve, r.greg, r.walter, r.skier, r.cotton, r.penguin];
         var results = yield tournament(players);
-        console.log(results);
         var expected = [1752, 1311, 1604, 1400, 1051, 429];
         assert.strictEqual(players.length, results.length);
         players.forEach(function (bot, i) {
