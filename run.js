@@ -122,10 +122,11 @@ function startRobot(robot) {
         });
 
         socket.on('game:init', function (msg) {
+            // I have been chosen to play a game!
             var game_id = msg.game_id;
             console.info("<", username, "game:init", game_id);
 
-            // Send the server our code.
+            // Send the server my code.
             console.info(">", username, "game:ready", game_id);
             socket.emit('game:ready', {game_id: game_id, code: robot.code});
 
@@ -143,35 +144,38 @@ function startRobot(robot) {
             console.info("<", username, "game:over", msg.game_id);
             delete generators[msg.game_id];
         });
-
-        socket.on('observe:init', function (msg) {
-            var pendingID = msg.clientTag + "/" + msg.players[1];
-            console.info("<", username, "observe:init", msg.game_id, msg.clientTag, msg.players[0], msg.players[1]);
-            Game.started(msg);
-        });
-
-        socket.on('observe:progress', function (msg) {
-            console.info("<", username, "observe:progress", msg.game_id,
-                         "P1:" + msg.player1_move, "P2:" + msg.player2_move,
-                         "(" + msg.player1_score + "-" + msg.player2_score + ")");
-        });
-
-        socket.on('observe:over', function (msg) {
-            console.info("<", username, "observe:over", msg.game_id,
-                         "(" + msg.player1_score + "-" + msg.player2_score + ")");
-            Game.ended(msg);
-        });
-
-        socket.on('tournament:started', function (msg) {
-            console.info("<", username, "tournament:started", msg.clientTag);
-        });
-
-        socket.on('tournament:done', function (msg) {
-            console.info("<", username, "tournament:done", msg.clientTag);
-            tournaments[msg.clientTag]._resolve(msg.scores);
-        });
     });
 };
+
+function addControlsToSocket(socket, username) {
+    socket.on('observe:init', function (msg) {
+        var pendingID = msg.clientTag + "/" + msg.players[1];
+        console.info("<", username, "observe:init", msg.game_id, msg.clientTag,
+                     msg.players[0], msg.players[1]);
+        Game.started(msg);
+    });
+
+    socket.on('observe:progress', function (msg) {
+        console.info("<", username, "observe:progress", msg.game_id,
+                     "P1:" + msg.player1_move, "P2:" + msg.player2_move,
+                     "(" + msg.player1_score + "-" + msg.player2_score + ")");
+    });
+
+    socket.on('observe:over', function (msg) {
+        console.info("<", username, "observe:over", msg.game_id,
+                     "(" + msg.player1_score + "-" + msg.player2_score + ")");
+        Game.ended(msg);
+    });
+
+    socket.on('tournament:started', function (msg) {
+        console.info("<", username, "tournament:started", msg.clientTag);
+    });
+
+    socket.on('tournament:done', function (msg) {
+        console.info("<", username, "tournament:done", msg.clientTag);
+        tournaments[msg.clientTag]._resolve(msg.scores);
+    });
+}
 
 // Read the contents of the given filename. Parse headers. Return a promise for
 // a new Robot object.
@@ -291,15 +295,12 @@ function tournament(names) {
     });
 }
 
-function shutdown() {
-    console.log("trying to quit out");
-    for (var name in robots) {
-        robots[name].socket.close();
-    }
-}
-
 startAll().then(function () {
     console.info("all started!");
+
+    for (var name in robots) {
+        addControlsToSocket(robots[name].socket, "robot-" + name);
+    }
 
     var tests = [
         test("steve", 500, "greg", 0),
@@ -317,4 +318,4 @@ startAll().then(function () {
 }).catch(function (exc) {
     console.error(exc.stack);
     console.error(exc);
-}).then(shutdown);
+}).then(process.exit);
