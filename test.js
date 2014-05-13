@@ -9,6 +9,12 @@ var assert = require('assert');
 // themselves only play the games they're asked to play.  Here we add the
 // ability to start games and tournaments, and get the scores when they're
 // done.
+//
+// There is some extra complexity (clientTag) because not only do we need to
+// launch games and observe outcomes, we must match requests and outcomes to
+// each other. Otherwise, how would we know when to resolve the promise
+// returned by playOneGame? Many other games, possibly involving the same
+// players, may be going on at the same time.
 
 var nextClientTag = 0;
 var pendingGames = Object.create(null);
