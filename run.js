@@ -65,7 +65,8 @@ function startRobot(robot) {
     var connectURL = url.parse(server);
     connectURL.query = {
         username: username,
-        name: robot.metadata.name
+        name: robot.metadata.name,
+        picture: robot.metadata.picture
     };
 
     return new Promise(function (resolve, reject) {
