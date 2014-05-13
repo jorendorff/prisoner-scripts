@@ -147,36 +147,6 @@ function startRobot(robot) {
     });
 };
 
-function addControlsToSocket(socket, username) {
-    socket.on('observe:init', function (msg) {
-        var pendingID = msg.clientTag + "/" + msg.players[1];
-        console.info("<", username, "observe:init", msg.game_id, msg.clientTag,
-                     msg.players[0], msg.players[1]);
-        Game.started(msg);
-    });
-
-    socket.on('observe:progress', function (msg) {
-        console.info("<", username, "observe:progress", msg.game_id,
-                     "P1:" + msg.player1_move, "P2:" + msg.player2_move,
-                     "(" + msg.player1_score + "-" + msg.player2_score + ")");
-    });
-
-    socket.on('observe:over', function (msg) {
-        console.info("<", username, "observe:over", msg.game_id,
-                     "(" + msg.player1_score + "-" + msg.player2_score + ")");
-        Game.ended(msg);
-    });
-
-    socket.on('tournament:started', function (msg) {
-        console.info("<", username, "tournament:started", msg.clientTag);
-    });
-
-    socket.on('tournament:done', function (msg) {
-        console.info("<", username, "tournament:done", msg.clientTag);
-        tournaments[msg.clientTag]._resolve(msg.scores);
-    });
-}
-
 // Read the contents of the given filename. Parse headers. Return a promise for
 // a new Robot object.
 Robot.load = function (filename) {
@@ -213,6 +183,39 @@ function startAll() {
 
         // Return a promise that becomes resolved when all the Robots are done starting.
         return Promise.all(robots);
+    });
+}
+
+
+
+
+function addControlsToSocket(socket, username) {
+    socket.on('observe:init', function (msg) {
+        var pendingID = msg.clientTag + "/" + msg.players[1];
+        console.info("<", username, "observe:init", msg.game_id, msg.clientTag,
+                     msg.players[0], msg.players[1]);
+        Game.started(msg);
+    });
+
+    socket.on('observe:progress', function (msg) {
+        console.info("<", username, "observe:progress", msg.game_id,
+                     "P1:" + msg.player1_move, "P2:" + msg.player2_move,
+                     "(" + msg.player1_score + "-" + msg.player2_score + ")");
+    });
+
+    socket.on('observe:over', function (msg) {
+        console.info("<", username, "observe:over", msg.game_id,
+                     "(" + msg.player1_score + "-" + msg.player2_score + ")");
+        Game.ended(msg);
+    });
+
+    socket.on('tournament:started', function (msg) {
+        console.info("<", username, "tournament:started", msg.clientTag);
+    });
+
+    socket.on('tournament:done', function (msg) {
+        console.info("<", username, "tournament:done", msg.clientTag);
+        tournaments[msg.clientTag]._resolve(msg.scores);
     });
 }
 
