@@ -28,6 +28,7 @@ function Game(p1, p2, clientTag, resolve, reject) {
         this._resolve = resolve;
         this._reject = reject;
     }.bind(this));
+    this.observer = undefined;
     pendingGames[clientTag + ":" + p1.name + "/" + p2.name] = this;
 }
 
@@ -40,11 +41,21 @@ Game.started = function (msg) {
     delete pendingGames[pendingId];
 };
 
+Game.progress = function (msg) {
+    var game = games[msg.game_id];
+    if (game.observer)
+        game.observer(msg);
+};
+
 Game.ended = function (msg) {
     var game = games[msg.game_id];
     game.scores = [msg.player1_score, msg.player2_score];
     game._resolve(game);
     delete games[msg.game_id];
+};
+
+Game.prototype.observe = function (cb) {
+    this.observer = cb;
 };
 
 function addControlsToSocket(socket, username) {
@@ -59,6 +70,7 @@ function addControlsToSocket(socket, username) {
         console.info("<", username, "observe:progress", msg.game_id,
                      "P1:" + msg.player1_move, "P2:" + msg.player2_move,
                      "(" + msg.player1_score + "-" + msg.player2_score + ")");
+        Game.progress(msg);
     });
 
     socket.on('observe:over', function (msg) {
@@ -77,13 +89,22 @@ function addControlsToSocket(socket, username) {
     });
 }
 
-function playGamesWith(robot, opponents) {
+// Sends 'play:now' to the server; returns an Array of Games.
+function playNow(robot, opponents) {
     var ids = opponents.map(function (r) { return r.id; });
     var clientTag = nextClientTag++;
     console.info(">", "robot-" + robot.name, "play:now", ids);
     robot.socket.emit("play:now", ids, clientTag);
     return opponents.map(function (opp) {
-        return new Game(robot, opp, clientTag).done;
+        return new Game(robot, opp, clientTag);
+    });
+}
+
+// Returns an array of promises instead, which is what you want
+// if you don't care about anything but the outcome of the game.
+function playGamesWith(robot, opponents) {
+    return playNow(robot, opponents).map(function (game) {
+        return game.done;
     });
 }
 
@@ -219,7 +240,7 @@ before = wrapForGenerators(before);
 
 // ## Actual tests (!)
 
-describe('robots', function () {
+describe('prisoner', function () {
     var r = robots.byName;
 
     before(function* () {
@@ -229,68 +250,109 @@ describe('robots', function () {
         }
     });
 
-    function match(combatants) {
-        var names = combatants.split("-");
-        it("should be able to match " + names[0] + " with " + names[1], function* () {
-            var a = r[names[0]], b = r[names[1]];
-            var game = yield playOneGame(a, b);
-            assert.deepEqual(game.scores, playLocally(a, b));
-        });
-    }
-
-    match('greg-steve');
-    match('steve-greg');
-    match('steve-walter');
-    match('cotton-skier');
-    match('skier-walter');
-
-    it("should be able to run multiple matches at once", function* () {
-        // I choose walter because he is stateful; one of the things we're
-        // testing here is that the games are properly independent.
-        var me = r.walter;
-        var them = [r.cotton, r.greg, r.steve, r.skier];
-        var games = yield Promise.all(playGamesWith(me, them));
-        them.forEach(function (opp, i) {
-            assert.deepEqual(games[i].scores, playLocally(me, opp));
-        });
-    });
-
-    it("should be able to run many games with the same participants all at once", function* () {
-        var N = 12;
-        var games = [];
-        for (var i = 0; i < N; i++) {
-            games[i] = playOneGame(r.cotton, r.skier);
+    describe('robots', function () {
+        function match(combatants) {
+            var names = combatants.split("-");
+            it("should be able to match " + names[0] + " with " + names[1], function* () {
+                var a = r[names[0]], b = r[names[1]];
+                var game = yield playOneGame(a, b);
+                assert.deepEqual(game.scores, playLocally(a, b));
+            });
         }
-        var games = yield Promise.all(games);
-        assert.strictEqual(games.length, N);
-        var expected = playLocally(r.cotton, r.skier);
-        games.forEach(function (game) {
-            assert.deepEqual(game.scores, expected);
+
+        match('greg-steve');
+        match('steve-greg');
+        match('steve-walter');
+        match('cotton-skier');
+        match('skier-walter');
+
+        it("should be able to play several games at once", function* () {
+            // I choose walter because he is stateful; one of the things we're
+            // testing here is that the games are properly independent.
+            var me = r.walter;
+            var them = [r.cotton, r.greg, r.steve, r.skier];
+            var games = yield Promise.all(playGamesWith(me, them));
+            them.forEach(function (opp, i) {
+                assert.deepEqual(games[i].scores, playLocally(me, opp));
+            });
+        });
+
+        it("should be able to play many games with the same opponent all at once", function* () {
+            var N = 12;
+            var games = [];
+            for (var i = 0; i < N; i++) {
+                games[i] = playOneGame(r.cotton, r.skier);
+            }
+            var games = yield Promise.all(games);
+            assert.strictEqual(games.length, N);
+            var expected = playLocally(r.cotton, r.skier);
+            games.forEach(function (game) {
+                assert.deepEqual(game.scores, expected);
+            });
         });
     });
 
-    var PENGUIN_LIFE = 37
+    describe("server", function () {
+        var PENGUIN_LIFE = 37;
 
-    it("should handle the penguin case (doofy behavior by a player -> forfeit)", function* () {
-        var game = yield playOneGame(r.steve, r.penguin);
-        assert.deepEqual(game.scores, [5 * NROUNDS, 0]);
+        it("should force any player making an invalid move to forfeit", function* () {
+            // Anything other than COOPERATE or DEFECT is of course invalid.
+            var game = yield playOneGame(r.steve, r.penguin);
+            assert.deepEqual(game.scores, [5 * NROUNDS, 0]);
 
-        assert(NROUNDS > PENGUIN_LIFE); // this next test would be invalid otherwise
-        game = yield playOneGame(r.greg, r.penguin);
-        assert.deepEqual(game.scores, [
-            3 * PENGUIN_LIFE + 5 * (NROUNDS - PENGUIN_LIFE),
-            3 * PENGUIN_LIFE
-        ]);
-    });
+            assert(NROUNDS > PENGUIN_LIFE); // the score calculation below would be wrong otherwise
+            game = yield playOneGame(r.greg, r.penguin);
+            assert.deepEqual(game.scores, [
+                3 * PENGUIN_LIFE + 5 * (NROUNDS - PENGUIN_LIFE),
+                3 * PENGUIN_LIFE
+            ]);
+        });
 
-    it("should be able to run a tournament", function* () {
-        var players = [r.steve, r.greg, r.walter, r.skier, r.cotton, r.penguin];
-        var results = yield tournament(players);
-        var expected = [1752, 1311, 1604, 1400, 1051, 429];
-        assert.strictEqual(players.length, results.length);
-        players.forEach(function (bot, i) {
-            assert.strictEqual(results[i].user_id, bot.id);
-            assert.strictEqual(results[i].score, expected[i]);
+        it("should be able to run a tournament", function* () {
+            var players = [r.steve, r.greg, r.walter, r.skier, r.cotton, r.penguin];
+            var results = yield tournament(players);
+            var expected = [1752, 1311, 1604, 1400, 1051, 429];
+            assert.strictEqual(players.length, results.length);
+            players.forEach(function (bot, i) {
+                assert.strictEqual(results[i].user_id, bot.id);
+                assert.strictEqual(results[i].score, expected[i]);
+            });
+        });
+
+        it('should immediately force a disconnected player to forfeit', function* () {
+            var KILL_ROUND = 11;
+            assert(NROUNDS > KILL_ROUND);
+
+            var failTimeout;
+            var game = playNow(r.greg, [r.steve])[0];
+            game.observe(function (msg) {
+                if (msg.current_round == KILL_ROUND) {
+                    r.steve.socket.disconnect();
+
+                    // Start the clock. The server should make steve forfeit
+                    // the game within the next 200msec.
+                    failTimeout = setTimeout(function () {
+                        throw new Error("200msec elapsed and the server has not ended the game.");
+                    }, 200);
+                }
+            });
+
+            // Now wait for the game to end.
+            yield game.done;
+
+            clearTimeout(failTimeout);
+
+            // The order of packet delivery is nondeterministic, so we
+            // can't assert the exact score.  But not too many rounds
+            // should have been permitted to happen after KILL_ROUND. Let's
+            // say at most one more.
+            var s0 = game.scores[0],  // greg
+            s1 = game.scores[1];  // steve
+            console.log([s0, s1]);
+            assert(s0 <= (NROUNDS - KILL_ROUND) * 5);
+            assert(s0 >= (NROUNDS - (KILL_ROUND + 1)) * 5);
+            assert(s1 >= KILL_ROUND * 5);
+            assert(s1 <= (KILL_ROUND + 1) * 5);
         });
     });
 });
