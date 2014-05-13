@@ -45,6 +45,9 @@ var server = "http://localhost:3000/";
 // example, `robots.greg` will be the robot defined in `characters/greg.js`.
 var robots = Object.create(null);
 
+// The same set of robots, indexed by id.
+var robotsById = Object.create(null);
+
 function Robot(name, metadata, code) {
     this.name = name;
     this.metadata = metadata;
@@ -114,6 +117,7 @@ function startRobot(robot) {
             console.info("<", username, "login", data.user._id);
             robot.id = data.user._id;
             robots[robot.name] = robot;
+            robotsById[robot.id] = robot;
             resolve(robot);
         });
 
@@ -142,9 +146,8 @@ function startRobot(robot) {
 
         socket.on('observe:init', function (msg) {
             var pendingID = msg.clientTag + "/" + msg.players[1];
-            console.info("<", username, "observe:init", msg.game_id, pendingID);
-            pendingGames[pendingID].onGameStart(msg);
-            delete pendingGames[pendingID];
+            console.info("<", username, "observe:init", msg.game_id, msg.clientTag, msg.players[0], msg.players[1]);
+            Game.started(msg);
         });
 
         socket.on('observe:progress', function (msg) {
@@ -156,7 +159,16 @@ function startRobot(robot) {
         socket.on('observe:over', function (msg) {
             console.info("<", username, "observe:over", msg.game_id,
                          "(" + msg.player1_score + "-" + msg.player2_score + ")");
-            games[msg.game_id].onGameFinish(msg);
+            Game.ended(msg);
+        });
+
+        socket.on('tournament:started', function (msg) {
+            console.info("<", username, "tournament:started", msg.clientTag);
+        });
+
+        socket.on('tournament:done', function (msg) {
+            console.info("<", username, "tournament:done", msg.clientTag);
+            tournaments[msg.clientTag]._resolve(msg.scores);
         });
     });
 };
@@ -200,39 +212,46 @@ function startAll() {
     });
 }
 
-var seq = 0;
+var nextClientTag = 0;
 var pendingGames = Object.create(null);
 var games = Object.create(null);
+var tournaments = Object.create(null);
 
-function Game(p1, p2, resolve, reject) {
+function Game(p1, p2, clientTag, resolve, reject) {
     this.id = undefined;
     this.players = [p1, p2];
-    this._resolve = resolve;
-    this._reject = reject;
+    this.done = new Promise(function (resolve, reject) {
+        this._resolve = resolve;
+        this._reject = reject;
+    }.bind(this));
+    pendingGames[clientTag + ":" + p1.name + "/" + p2.name] = this;
 }
 
-Game.prototype.onGameStart = function (msg) {
-    this.id = msg.game_id;
-    games[this.id] = this;
+Game.started = function (msg) {
+    var p0 = robotsById[msg.players[0]], p1 = robotsById[msg.players[1]];
+    var pendingId = msg.clientTag + ":" + p0.name + "/" + p1.name;
+    var game = pendingGames[pendingId];
+    game.id = msg.game_id;
+    games[game.id] = game;
+    delete pendingGames[pendingId];
 };
 
-Game.prototype.onGameFinish = function (msg) {
-    this.scores = [msg.player1_score, msg.player2_score];
-    this._resolve(this);
-    delete games[this.id];
+Game.ended = function (msg) {
+    var game = games[msg.game_id];
+    game.scores = [msg.player1_score, msg.player2_score];
+    game._resolve(game);
+    delete games[msg.game_id];
 };
 
 function playGame(name1, names) {
     var p1 = robots[name1];
     var ids = names.map(function (name) { return robots[name].id; });
-    var requestID = "" + seq++;
+    var clientTag = nextClientTag++;
     console.info(">", "robot-" + p1.name, "play:now", ids);
-    p1.socket.emit("play:now", ids, requestID);
+    p1.socket.emit("play:now", ids, clientTag);
     return names.map(function (name) {
         var p2 = robots[name];
-        return new Promise(function (resolve, reject) {
-            pendingGames[requestID + "/" + p2.id] = new Game(p1, p2, resolve, reject);
-        });
+        return new Game(p1, p2, clientTag).done;
     });
 }
 
@@ -250,22 +269,52 @@ function test(name1, score1, name2, score2) {
     })
 }
 
+function tournament(names) {
+    var ids = names.map(function (name) {
+        if (!(name in robots))
+            throw new Error("no robot named '" + name + "'");
+        return robots[name].id;
+    });
+    var clientTag = nextClientTag++;
+
+    // We have to create a Game object for each game we expect the server to
+    // start.  This means all pairs of ids:
+    for (var i = 0; i < ids.length; i++) {
+        for (var j = i + 1; j < ids.length; j++) {
+            new Game(robots[names[i]], robots[names[j]], clientTag);
+        }
+    }
+
+    robots.greg.socket.emit('tournament:start', {players: ids, clientTag: clientTag});
+    return new Promise(function (resolve, reject) {
+        tournaments[clientTag] = {_resolve: resolve, _reject: reject};
+    });
+}
+
 function shutdown() {
+    console.log("trying to quit out");
     for (var name in robots) {
         robots[name].socket.close();
     }
 }
 
 startAll().then(function () {
-    console.info("all started! starting a match:");
+    console.info("all started!");
+
     var tests = [
         test("steve", 500, "greg", 0),
-        test("steve", 476, "froggy", 6),
+        //test("steve", 476, "froggy", 6),
         test("greg", 300, "walter", 300),
         test("steve", 104, "walter", 99)
     ];
     return Promise.all(tests);
-    //robots.steve.socket.emit("play:now", [/*robots.greg.id,*/ robots.froggy.id]);
+}).then(function () {
+    return tournament("steve greg walter skier cotton penguin".split(" "));
+}).then(function (scores) {
+    scores.forEach(function (pair) {
+        console.log(robotsById[pair.user_id].name, pair.score);
+    });
 }).catch(function (exc) {
+    console.error(exc.stack);
     console.error(exc);
 }).then(shutdown);
