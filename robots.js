@@ -168,7 +168,7 @@ Robot.load = function (filename) {
     return readFile(filename, {encoding: "utf-8"}).then(function (text) {
         // Parse lines at the beginning of the file that match
         // the pattern "// key: value\n".
-        var metadata = {};
+        var metadata = Object.create(null);
         while (true) {
             var match = text.match(/^\/\/ (\w+): (.*)\n/);
             if (match === null)
