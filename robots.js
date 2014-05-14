@@ -127,6 +127,9 @@ function startRobot(robot) {
             robotsByName[robot.name] = robot;
             robotsById[robot.id] = robot;
             resolve(robot);
+
+            // Also, send a copy of our source code.
+            socket.emit('post-source', robot.code);
         });
 
         socket.on('game:init', function (msg) {

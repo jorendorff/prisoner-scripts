@@ -240,7 +240,7 @@ before = wrapForGenerators(before);
 
 // ## Actual tests (!)
 
-describe('prisoner', function () {
+describe("prisoner", function () {
     var r = robots.byName;
 
     before(function* () {
@@ -250,7 +250,7 @@ describe('prisoner', function () {
         }
     });
 
-    describe('robots', function () {
+    describe("robots", function () {
         function match(combatants) {
             var names = combatants.split("-");
             it("should be able to match " + names[0] + " with " + names[1], function* () {
@@ -260,11 +260,11 @@ describe('prisoner', function () {
             });
         }
 
-        match('greg-steve');
-        match('steve-greg');
-        match('steve-walter');
-        match('cotton-skier');
-        match('skier-walter');
+        match("greg-steve");
+        match("steve-greg");
+        match("steve-walter");
+        match("cotton-skier");
+        match("skier-walter");
 
         it("should be able to play several games at once", function* () {
             // I choose walter because he is stateful; one of the things we're
@@ -311,7 +311,7 @@ describe('prisoner', function () {
         it("should be able to run a tournament", function* () {
             var players = [r.steve, r.greg, r.walter, r.skier, r.cotton, r.penguin];
             var results = yield tournament(players);
-            var expected = [1752, 1311, 1604, 1400, 1051, 429];
+            var expected = [1756, 1311, 1602, 1400, 1055, 429];
             assert.strictEqual(players.length, results.length);
             players.forEach(function (bot, i) {
                 assert.strictEqual(results[i].user_id, bot.id);
@@ -319,7 +319,7 @@ describe('prisoner', function () {
             });
         });
 
-        it('should immediately force a disconnected player to forfeit', function* () {
+        it("should immediately force a disconnected player to forfeit", function* () {
             var KILL_ROUND = 11;
             assert(NROUNDS > KILL_ROUND);
 
@@ -348,7 +348,6 @@ describe('prisoner', function () {
             // say at most one more.
             var s0 = game.scores[0],  // greg
             s1 = game.scores[1];  // steve
-            console.log([s0, s1]);
             assert(s0 <= (NROUNDS - KILL_ROUND) * 5);
             assert(s0 >= (NROUNDS - (KILL_ROUND + 1)) * 5);
             assert(s1 >= KILL_ROUND * 5);
