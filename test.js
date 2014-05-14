@@ -33,7 +33,7 @@ function Game(p1, p2, clientTag, resolve, reject) {
 }
 
 Game.started = function (msg) {
-    var p0 = robots.byId[msg.players[0]], p1 = robots.byId[msg.players[1]];
+    var p0 = robots.byId[msg.players[0]._id], p1 = robots.byId[msg.players[1]._id];
     var pendingId = msg.clientTag + ":" + p0.name + "/" + p1.name;
     var game = pendingGames[pendingId];
     game.id = msg.game_id;
