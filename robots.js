@@ -176,6 +176,10 @@ Robot.load = function (filename) {
             metadata[match[1]] = match[2];
             text = text.substring(match[0].length);
         }
+
+        // Strip out any remaining blank lines following the metadata.
+        text = text.replace(/^(\s*\n)*/, "");
+
         return new Robot(name, metadata, text);
     });
 };
