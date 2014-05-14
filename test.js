@@ -244,7 +244,7 @@ describe("prisoner", function () {
     var r = robots.byName;
 
     before(function* () {
-        yield robots.startAll();
+        yield robots.startAll(true);
         for (var name in robots.byName) {
             addControlsToSocket(robots.byName[name].socket, "robot-" + name);
         }

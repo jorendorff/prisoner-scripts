@@ -1,5 +1,6 @@
 // name: Foul Bachelor Frog
 // picture: http://i1.kym-cdn.com/photos/images/original/000/214/831/11909748.jpg
+// testingOnly: true
 
 function sleep(seconds) {
     return new Promise(function (resolve, reject) {

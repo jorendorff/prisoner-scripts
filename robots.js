@@ -182,18 +182,26 @@ Robot.load = function (filename) {
 
 // Read all the character files, connect each character to the server. Return a
 // promise that resolves when all characters are connected.
-function startAll() {
+//
+// If the optional `testing` parameter is true, really connect *all* the characters;
+// if false or missing, skip robots with "testingOnly: true" in their headers.
+//
+function startAll(testing) {
     var dir = __dirname + "/characters";
     return readdir(dir).then(function (files) {
         files = files.filter(function (name) { return name.match(/\.js$/); });
 
         // Load and start each robot. This produces an array of promises for Robot objects.
         var robotsArray = files.map(function (name) {
-            return Robot.load(dir + "/" + name).then(startRobot);
+            return Robot.load(dir + "/" + name).then(function (robot) {
+                if (testing || !robot.metadata.testingOnly) {
+                    return startRobot(robot);
+                }
+            });
         });
 
         // Return a promise that becomes resolved when all the Robots are done starting.
-        return Promise.all(robotsArray);
+        return Promise.all(robotsArray).then(function () { return robotsByName; });
     });
 }
 
