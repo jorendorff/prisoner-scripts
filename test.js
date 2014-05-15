@@ -79,10 +79,6 @@ function addControlsToSocket(socket, username) {
         Game.ended(msg);
     });
 
-    socket.on('tournament:started', function (msg) {
-        console.info("<", username, "tournament:started", msg.clientTag);
-    });
-
     socket.on('tournament:done', function (msg) {
         console.info("<", username, "tournament:done", msg.clientTag);
         tournaments[msg.clientTag]._resolve(msg.scores);
@@ -124,7 +120,14 @@ function tournament(players) {
         }
     }
 
-    players[0].socket.emit('tournament:start', {players: ids, clientTag: clientTag});
+    var msg = {players: ids, clientTag: clientTag};
+    players[0].socket.emit('tournament:start', msg, function (players) {
+        for (var i = 0; i < players.length; i++) {
+            for (var j = i + 1; j < players.length; j++) {
+                new Game(players[i], players[j], clientTag);
+            }
+        }
+    });
     return new Promise(function (resolve, reject) {
         tournaments[clientTag] = {_resolve: resolve, _reject: reject};
     });

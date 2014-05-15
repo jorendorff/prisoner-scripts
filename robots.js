@@ -105,14 +105,14 @@ function startRobot(robot) {
 
             if (move !== 'COOPERATE' && move !== 'DEFECT')
                 console.warn(username + " yielded an invalid move in game " + game_id);
-            console.info(">", username, "game:move", game_id, move);
+            //console.info(">", username, "game:move", game_id, move);
             socket.emit('game:move', {game_id: game_id, move: move});
         }
 
         socket.on('connect', function () {
             console.info("*", username, "connect");
             robot.socket = socket;
-            console.info(">", username, "add:user");
+            //console.info(">", username, "add:user");
             socket.emit('add:user', username);
             // The response to this will be a 'login' message.
         });
@@ -122,7 +122,7 @@ function startRobot(robot) {
         });
 
         socket.on('login', function (data) {
-            console.info("<", username, "login", data.user._id);
+            //console.info("<", username, "login", data.user._id);
             robot.id = data.user._id;
             robotsByName[robot.name] = robot;
             robotsById[robot.id] = robot;
@@ -135,11 +135,7 @@ function startRobot(robot) {
         socket.on('game:init', function (msg) {
             // I have been chosen to play a game!
             var game_id = msg.game_id;
-            console.info("<", username, "game:init", game_id);
-
-            // Send the server my code.
-            console.info(">", username, "game:ready", game_id);
-            socket.emit('game:ready', {game_id: game_id, code: robot.code});
+            //console.info("<", username, "game:init", game_id);
 
             // Call the generator function to create a generator object.
             generators[game_id] = robot.main();
@@ -147,12 +143,12 @@ function startRobot(robot) {
         });
 
         socket.on('game:next', function (msg) {
-            console.info("<", username, "game:next", msg.game_id, msg.previous);
+            //console.info("<", username, "game:next", msg.game_id, msg.previous);
             computeMove(msg.game_id, msg.previous);
         });
 
         socket.on('game:over', function (msg) {
-            console.info("<", username, "game:over", msg.game_id);
+            //console.info("<", username, "game:over", msg.game_id);
             delete generators[msg.game_id];
         });
     });
